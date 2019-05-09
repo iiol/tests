@@ -1,8 +1,10 @@
 SRC = $(wildcard *.c)
 OBJ = $(SRC:.c=)
 
-CFLAGS = -Wall
-LFLAGS = `pkg-config --cflags --libs libdrm libudev`
+CFLAGS = `pkg-config --cflags libdrm libudev`
+CFLAGS += -Wall
+LFLAGS = `pkg-config --libs libdrm libudev`
+LFLAGS += -pthread
 
 
 build: $(OBJ)
@@ -10,6 +12,7 @@ build: $(OBJ)
 
 %: %.c
 	gcc $(CFLAGS) $(LFLAGS) -o $@ $<
+	@echo __________
 
 clean:
-	rm $(OBJ)
+	rm -f $(OBJ)

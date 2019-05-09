@@ -230,7 +230,6 @@ main(void)
 
 #if 1   // test drmModeSetPlane()
         drmModePlaneResPtr planes;
-        drmModePlanePtr plane;
         int ret;
 
         planes = drmModeGetPlaneResources(dev.fd);
