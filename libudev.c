@@ -65,19 +65,12 @@ main(void)
 		FD_ZERO(&fds);
 		FD_SET(udev_fd, &fds);
 
-		printf("0.0\n");
 		ret = select(udev_fd + 1, &fds, NULL, NULL, NULL);
 		if (ret <= 0)
 			break;
 
-		printf("0\n");
-		if (FD_ISSET(udev_fd, &fds)) {
-			printf("1\n");
+		if (FD_ISSET(udev_fd, &fds))
 			udev_dev = udev_monitor_receive_device(udev_mon);
-			printf("2\n");
-			//process_device(udev_dev);
-		}
-		printf("Hi\n");
 	}
 
 	return 0;
