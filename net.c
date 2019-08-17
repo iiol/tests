@@ -4,15 +4,10 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/select.h>
-#include <sys/wait.h>
+#include <arpa/inet.h>
 
-
-#define MSG_SIZE 60000
-#define SOCKLEN sizeof (struct sockaddr_in)
 #define SYSCALL(estat, func, args...)					\
 ({									\
 	int __ret;							\
@@ -29,97 +24,80 @@
 	__ret;								\
 })
 
+#define MSG_SIZE 4000
 
 int
-net_init(char *address, int port)
+server(void)
 {
 	int fd;
+	int ret;
+	char msg[MSG_SIZE];
+	int broadcast = 1;
+	fd_set fd_set;
+	struct timeval timeout;
+	socklen_t socklen = sizeof (struct sockaddr_in);
+	struct sockaddr_in addr_cli;
 	struct sockaddr_in addr = {
 		.sin_family = AF_INET,
-		.sin_addr = inet_addr(address),
-		.sin_port = htons(port),
+		.sin_port = htons(5432),
+		.sin_addr.s_addr = htonl(INADDR_ANY),
 	};
 
 
 	fd = SYSCALL(1, socket, AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	SYSCALL(1, bind, fd, (struct sockaddr*)&addr, SOCKLEN);
-
-	return fd;
-}
-
-int
-server1(void)
-{
-	int fd, n;
-	char msg[MSG_SIZE];
-	socklen_t socklen = SOCKLEN;
-	struct sockaddr_in addr;
-
-
-	fd = net_init("0.0.0.0", 55555);
-
-	while (1) {
-		n = SYSCALL(1, recvfrom, fd, msg, MSG_SIZE - 1, 0,
-			    (struct sockaddr*)&addr, &socklen);
-		msg[n] = '\0';
-
-		printf("SERVER1: msg:\n----------\n%s\n----------\n", msg);
-	}
-
-	return 1;
-}
-
-int
-server2(void)
-{
-	return 0;
-	int fd, n;
-	char msg[MSG_SIZE];
-	socklen_t socklen = SOCKLEN;
-	struct sockaddr_in addr;
-
-
-	fd = net_init("0.0.0.0", 55555);
-
-	while (1) {
-		n = SYSCALL(1, recvfrom, fd, msg, MSG_SIZE - 1, 0,
-			    (struct sockaddr*)&addr, &socklen);
-		msg[n] = '\0';
-
-		printf("SERVER2: msg:\n----------\n%s\n----------\n", msg);
-	}
-
-	return 1;
-}
-
-int
-client1(void)
-{
-	int fd;
-	int broadcast = 1;
-	char msg[] = "Hi World";
-	struct sockaddr_in addr = {
-		.sin_family = AF_INET,
-		//.sin_addr.s_addr = htonl(INADDR_BROADCAST),
-		.sin_addr = inet_addr("127.255.255.255"),
-		.sin_port = htons(55555),
-	};
-
-
-	fd = net_init("0.0.0.0", 0);
+	SYSCALL(1, bind, fd, (struct sockaddr*)&addr, socklen);
 	SYSCALL(1, setsockopt, fd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof (int));
 
 	while (1) {
-		SYSCALL(1, sendto, fd, msg, strlen(msg), 0, (struct sockaddr*)&addr,
-			SOCKLEN);
+		FD_ZERO(&fd_set);
+		FD_SET(fd, &fd_set);
+		timeout.tv_sec = 5;
+		timeout.tv_usec = 0;
 
-		sleep(5);
+		if (SYSCALL(1, select, fd + 1, &fd_set, NULL, NULL, &timeout) == 0)
+			continue;
+
+		ret = SYSCALL(1, recvfrom, fd, msg, MSG_SIZE - 1, 0,
+			    (struct sockaddr*)&addr_cli, &socklen);
+		msg[ret] = '\0';
+
+		printf("%s", msg);
 	}
+
+	return 0;
 }
 
 int
-client2(void)
+client(void)
 {
+	int fd;
+	char msg[] = "Hello World\n";
+	int broadcast = 1;
+	socklen_t socklen = sizeof (struct sockaddr_in);
+	struct sockaddr_in addr_brd = {
+		.sin_family = AF_INET,
+		.sin_port = htons(5432),
+		.sin_addr.s_addr = htonl(INADDR_BROADCAST),
+	};
+	struct sockaddr_in addr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(0),
+		.sin_addr.s_addr = htonl(INADDR_ANY),
+	};
+
+
+	fd = SYSCALL(1, socket, AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	SYSCALL(1, bind, fd, (struct sockaddr*)&addr, socklen);
+	SYSCALL(1, setsockopt, fd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof (int));
+
+	while (1) {
+		SYSCALL(1, sendto, fd, msg, strlen(msg), 0, (struct sockaddr*)&addr_brd,
+			socklen);
+
+		sleep(5);
+	}
+
+	return 0;
 }
 
 int
@@ -128,25 +106,14 @@ main(void)
 	pid_t pid;
 
 
-	pid = SYSCALL(1, fork);
-	if (pid == 0)
-		return server1();
+	pid = fork();
 
-	pid = SYSCALL(1, fork);
-	if (pid == 0)
-		return server2();
-
-	pid = SYSCALL(1, fork);
-	if (pid == 0)
-		return client1();
-
-	pid = SYSCALL(1, fork);
-	if (pid == 0)
-		return client2();
-
-	wait(NULL);
-	wait(NULL);
-	wait(NULL);
-
-	return 0;
+	if (pid > 0)
+		return server();
+	else if (pid == 0)
+		return client();
+	else {
+		perror("fork()");
+		return 1;
+	}
 }
