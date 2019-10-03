@@ -26,6 +26,14 @@ static const uint8_t SBox[] = {
 	0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
 };
 
+static const uint8_t KEY[] = {
+	0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c,
+};
+
+static const uint8_t STATE[] = {
+	0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34,
+};
+
 uint8_t
 mult2(uint8_t a)
 {
@@ -100,6 +108,21 @@ MixColumns(uint8_t *state)
 	return state;
 }
 
+void
+debug_print(char *s, uint8_t *state)
+{
+	int i;
+
+
+	printf("%s", s);
+	for (i = 0; i < 16; ++i) {
+		if (i && i % 4 == 0)
+			putchar(' ');
+		printf("%02x", state[i]);
+	}
+	putchar('\n');
+}
+
 int
 main(void)
 {
@@ -111,7 +134,9 @@ main(void)
 	key = malloc(16);
 	rkey = malloc(11 * 4 * 4);
 
-	memcpy(key, "Hello World!!!!!", 16);
+	memcpy(key, KEY, 16);		// to remove
+	memcpy(state, STATE, 16);	// to remove
+	memset(rkey, 0, 11 * 4 * 4);	// to remove
 
 	for (i = 0; i < 16; ++i)
 		rkey[i] = key[i];
@@ -119,8 +144,8 @@ main(void)
 	for (i = 4; i < 11 * 4; ++i) {
 		for (j = 0; j < 4; ++j) {
 			if (i % 4 == 0) {
-				rkey[4*i + j] = SBox[rkey[4*(i-1) + j + ((j < 3) ? 1:0)]];
-				rkey[4*i + j] ^= rkey[4*(i-4) + j] ^ ((j == 0) ? rcon[i/4] : 0);
+				rkey[4*i + j] = SBox[rkey[4*(i-1) + ((j < 3) ? 1+j:0)]];
+				rkey[4*i + j] ^= rkey[4*(i-4) + j] ^ ((j == 0) ? rcon[i/4-1]:0);
 			}
 			else
 				rkey[4*i + j] = rkey[4*(i-1) + j] ^ rkey[4*(i-4) + j];
@@ -134,8 +159,8 @@ main(void)
 		// Init
 		state = AddRoundKey(state, rkey);
 
-		// First 10 rounds
-		for (i = 0; i < 10; ++i) {
+		// First 9 rounds
+		for (i = 1; i < 10; ++i) {
 			state = SubBytes(state);
 			state = ShiftRows(state);
 			state = MixColumns(state);
@@ -145,12 +170,10 @@ main(void)
 		// Last round
 		state = SubBytes(state);
 		state = ShiftRows(state);
-		state = AddRoundKey(state, &(rkey[16*9]));
+		state = AddRoundKey(state, &(rkey[16*i]));
 
-#if 0
 		for (i = 0; i < 16; ++i)
 			printf("%x", state[i]);
-#endif
 	}
 
 	putchar('\n');
