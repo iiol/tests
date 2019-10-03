@@ -1,11 +1,13 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
 #include <unistd.h>
 
 #define SWAP(a, b) do {a = a ^ b; b = a ^ b; a = a ^ b;} while(0)
 
 
-static const uint8_t sbox[] = {
+static const uint8_t SBox[] = {
 	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
 	0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
 	0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
@@ -24,20 +26,45 @@ static const uint8_t sbox[] = {
 	0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
 };
 
-int
-main(void)
+uint8_t
+mult2(uint8_t a)
 {
-	int i, j;
-	uint8_t state[16], tmp;
+	return (a << 1) ^ ((a < 0x80) ? 0 : 0x1b);
+}
 
+uint8_t
+mult3(uint8_t a)
+{
+	return mult2(a) ^ a;
+}
 
-	read(0, state, 16);
+uint8_t*
+AddRoundKey(uint8_t *state, uint8_t *rkey)
+{
+	uint8_t i;
 
-	// SubBytes
-	for (j = 0; j < 16; ++j)
-		state[j] = sbox[state[j]];
+	for (i = 0; i < 16; ++i)
+		state[i] = state[i] ^ rkey[i];
 
-	// ShiftRows
+	return state;
+}
+
+uint8_t*
+SubBytes(uint8_t *state)
+{
+	uint8_t i;
+
+	for (i = 0; i < 16; ++i)
+		state[i] = SBox[state[i]];
+
+	return state;
+}
+
+uint8_t*
+ShiftRows(uint8_t *state)
+{
+	uint8_t tmp;
+
 	tmp = state[1];
 	state[1] = state[5];
 	state[5] = state[9];
@@ -53,7 +80,80 @@ main(void)
 	SWAP(state[2], state[10]);
 	SWAP(state[6], state[14]);
 
-	//
+	return state;
+}
+
+uint8_t*
+MixColumns(uint8_t *state)
+{
+	uint8_t i, t[16];
+
+	memcpy(t, state, 16);
+
+	for (i = 0; i < 4; ++i) {
+		state[4*i+0] = mult2(t[4*i+0]) ^ mult3(t[4*i+1]) ^ t[4*i+2] ^ t[4*i+3];
+		state[4*i+1] = mult2(t[4*i+1]) ^ mult3(t[4*i+2]) ^ t[4*i+0] ^ t[4*i+3];
+		state[4*i+2] = mult2(t[4*i+2]) ^ mult3(t[4*i+3]) ^ t[4*i+0] ^ t[4*i+1];
+		state[4*i+3] = mult2(t[4*i+3]) ^ mult3(t[4*i+0]) ^ t[4*i+1] ^ t[4*i+2];
+	}
+
+	return state;
+}
+
+int
+main(void)
+{
+	uint8_t i, j, nc;
+	uint8_t *state, *key, *rkey;
+	uint8_t rcon[10] = {0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36};
+
+	state = malloc(16);
+	key = malloc(16);
+	rkey = malloc(11 * 4 * 4);
+
+	memcpy(key, "Hello World!!!!!", 16);
+
+	for (i = 0; i < 16; ++i)
+		rkey[i] = key[i];
+
+	for (i = 4; i < 11 * 4; ++i) {
+		for (j = 0; j < 4; ++j) {
+			if (i % 4 == 0) {
+				rkey[4*i + j] = SBox[rkey[4*(i-1) + j + ((j < 3) ? 1:0)]];
+				rkey[4*i + j] ^= rkey[4*(i-4) + j] ^ ((j == 0) ? rcon[i/4] : 0);
+			}
+			else
+				rkey[4*i + j] = rkey[4*(i-1) + j] ^ rkey[4*(i-4) + j];
+		}
+	}
+
+	while ((nc = read(0, state, 16)) != 0) {
+		if (nc < 16)
+			memset(state + nc, 0, 16 - nc);
+
+		// Init
+		state = AddRoundKey(state, rkey);
+
+		// First 10 rounds
+		for (i = 0; i < 10; ++i) {
+			state = SubBytes(state);
+			state = ShiftRows(state);
+			state = MixColumns(state);
+			state = AddRoundKey(state, &(rkey[16*i]));
+		}
+
+		// Last round
+		state = SubBytes(state);
+		state = ShiftRows(state);
+		state = AddRoundKey(state, &(rkey[16*9]));
+
+#if 0
+		for (i = 0; i < 16; ++i)
+			printf("%x", state[i]);
+#endif
+	}
+
+	putchar('\n');
 
 	return 0;
 }
